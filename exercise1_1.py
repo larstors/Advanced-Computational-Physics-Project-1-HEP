@@ -1,7 +1,7 @@
 import numpy as np
 import matplotlib.pyplot as plt
-import random
 from numba import njit, jit
+import scipy as sci
 
 
 # ################### CONSTANTS #################
@@ -36,7 +36,7 @@ smax = (M_Z + 3 * Gamma_Z) ** 2
 np.random.seed(0)
 
 
-def Chi_1(s:float):
+def Chi_1(s: float):
     """Photon-Z intereference
 
     Args:
@@ -47,7 +47,8 @@ def Chi_1(s:float):
     """
     return kappa * s * (s - M_Z ** 2) / ((s - M_Z ** 2) ** 2 + Gamma_Z ** 2 * M_Z ** 2)
 
-def Chi_2(s:float):
+
+def Chi_2(s: float):
     """Resonance from Z amplitude
 
     Args:
@@ -85,8 +86,9 @@ def M_qqbar(s: float, cosTheta: float, phi: float, q: int):
 
     Vq = A - 2.0 * Q * sin2theta_w
 
-    M2 = (4 * np.pi * alpha) ** 2 * N_C * ((1 + cosTheta ** 2) * (Qe ** 2 * Q ** 2 + 2 * Qe * Q * Ve * Vq * Chi_1(s) + (Ae ** 2 + Ve ** 2) * (A ** 2 + Vq ** 2) * Chi_2(s)) + cosTheta * (4 * Qe * Q * Ae * A * Chi_1(s) + 8 * Ae * Ve * A * Vq * Chi_2(s)))
-    
+    M2 = (4 * np.pi * alpha) ** 2 * N_C * ((1 + cosTheta ** 2) * (Qe ** 2 * Q ** 2 + 2 * Qe * Q * Ve * Vq * Chi_1(s) + (Ae ** 2 +
+                                                                                                                        Ve ** 2) * (A ** 2 + Vq ** 2) * Chi_2(s)) + cosTheta * (4 * Qe * Q * Ae * A * Chi_1(s) + 8 * Ae * Ve * A * Vq * Chi_2(s)))
+
     return M2
 
 
@@ -104,27 +106,29 @@ def Integrator_sum(N: int, free_s=False):
 
     # constants
     beam_energy = s
-    
+
     M = []
 
-    # number of Monte-Carlo steps per flavour
-    N_per_q = N // N_q
-    # loop over all quark flavour contributions
-    for q in range(1, 1 + N_q):
-        # sample for each quark flavour
-        for n in range(N_per_q):
-            # is s fixed?
-            if free_s:
-                beam_energy = np.random.uniform(low=smin, high=smax)
-            
-            cosT = np.random.uniform(low=cosTmin, high=cosTmax)
-            phi = np.random.uniform(low=phimin, high=phimax)
-            
-            # calculating cross-section for MC point
-            m = f_conv * 1.0 / (8.0 * np.pi * 4.0 * np.pi * 2 * s) * M_qqbar(beam_energy, cosT, phi, q)
+    # sample
+    for n in range(N):
+        # is s fixed?
+        if free_s:
+            beam_energy = np.random.uniform(low=smin, high=smax)
 
-            M.append(m)
-    
+        cosT = np.random.uniform(low=cosTmin, high=cosTmax)
+        phi = np.random.uniform(low=phimin, high=phimax)
+        m = 0
+        # loop over all quark flavour contributions
+        for q in range(1, 1 + N_q):
+
+            # calculating cross-section for MC point
+            m += M_qqbar(beam_energy, cosT, phi, q)
+
+        m *= f_conv * 1.0 / (8.0 * np.pi * 4.0 * np.pi *
+                             2 * s)
+
+        M.append(m)
+
     M = np.array(M)
     m_mean = 0
     dev = 0
@@ -135,15 +139,16 @@ def Integrator_sum(N: int, free_s=False):
         m_mean *= (smax - smin)
         dev *= (smax - smin)
     else:
-        m_mean =  1.0 / (N) * np.sum(M)
+        m_mean = 1.0 / (N) * np.sum(M)
         dev = np.sqrt((1.0 / N * np.sum(M ** 2) - m_mean ** 2) / N)
 
-    m_mean *= (cosTmax - cosTmin) * (phimax - phimin) 
-    dev *= (cosTmax - cosTmin) * (phimax - phimin) 
+    m_mean *= (cosTmax - cosTmin) * (phimax - phimin)
+    dev *= (cosTmax - cosTmin) * (phimax - phimin)
 
     return m_mean, dev
 
-def Integrator_pick(N: int, free_s: bool):
+
+def Integrator_pick(N: int, free_s=False):
     """Monte-Carlo integrator for a 2->2 differential cross-section with random quark flavour
 
     Args:
@@ -157,7 +162,7 @@ def Integrator_pick(N: int, free_s: bool):
 
     # constants
     beam_energy = s
-    
+
     M = []
 
     # sample for each quark flavour
@@ -166,15 +171,16 @@ def Integrator_pick(N: int, free_s: bool):
         # is s fixed?
         if free_s:
             beam_energy = np.random.uniform(low=smin, high=smax)
-        
+
         cosT = np.random.uniform(low=cosTmin, high=cosTmax)
         phi = np.random.uniform(low=phimin, high=phimax)
-        
+
         # calculating cross-section for MC point
-        m = f_conv * 1.0 / (8.0 * np.pi * 4.0 * np.pi * 2 * s) * M_qqbar(beam_energy, cosT, phi, q)
+        m = N_q * f_conv * 1.0 / (8.0 * np.pi * 4.0 * np.pi * 2 * s) * \
+            M_qqbar(beam_energy, cosT, phi, q)
 
         M.append(m)
-    
+
     M = np.array(M)
     m_mean = 0
     dev = 0
@@ -185,19 +191,42 @@ def Integrator_pick(N: int, free_s: bool):
         m_mean *= (smax - smin)
         dev *= (smax - smin)
     else:
-        m_mean =  1.0 / (N) * np.sum(M)
+        m_mean = 1.0 / (N) * np.sum(M)
         dev = np.sqrt((1.0 / N * np.sum(M ** 2) - m_mean ** 2) / N)
 
-    m_mean *= (cosTmax - cosTmin) * (phimax - phimin) 
-    dev *= (cosTmax - cosTmin) * (phimax - phimin) 
+    m_mean *= (cosTmax - cosTmin) * (phimax - phimin)
+    dev *= (cosTmax - cosTmin) * (phimax - phimin)
 
     return m_mean, dev
 
 
+print("RNG Test:       ", np.random.rand(5),
+      "\nSupposed to be   [0.5488135  0.71518937 0.60276338 0.54488318 0.4236548 ]")
 
 
+N = np.array([10, 100, 1000, 10000])
 
-print("RNG Test: ", np.random.rand(5), "\n \t   [0.5488135  0.71518937 0.60276338 0.54488318 0.4236548 ]")
+I = []
+
+for n in N:
+    I.append(Integrator_pick(n)[1])
 
 
-print(Integrator_pick(1000, False), Integrator_sum(1000, False))
+fig = plt.figure()
+
+plt.plot(N, I, "r-x", label="MC integrator")
+plt.plot(N, 13000*np.sqrt(1/N), "k--", label=r"$\sim N^{-1/2}$")
+plt.yscale("log")
+plt.xscale("log")
+plt.xlabel(r"$N$")
+plt.ylabel(r"$\mathrm{var}(\sigma)$")
+plt.grid()
+plt.legend()
+
+plt.savefig("ex1_1_1.pdf", dpi=500, bbox_inches="tight")
+
+
+N = 10000
+I = Integrator_pick(N)
+
+print("Using N=%d we get a result of sigma=%.2f +- %.2f" % (N, I[0], I[1]))
