@@ -85,13 +85,13 @@ def M_qqbar(s: float, cosTheta: float, phi: float, q: int):
 
     Vq = A - 2.0 * Q * sin2theta_w
 
-    M2 = (4 * np.pi * alpha) ** 2 * ((1 + cosTheta ** 2) * (Qe ** 2 * Q ** 2 + 2 * Qe * Q * Ve * Vq * Chi_1(s) + (Ae ** 2 + Ve ** 2) * (A ** 2 + Vq ** 2) * Chi_2(s)) + cosTheta * (4 * Qe * Q * Ae * A * Chi_1(s) + 8 * Ae * Ve * A * Vq * Chi_2(s)))
+    M2 = (4 * np.pi * alpha) ** 2 * N_C * ((1 + cosTheta ** 2) * (Qe ** 2 * Q ** 2 + 2 * Qe * Q * Ve * Vq * Chi_1(s) + (Ae ** 2 + Ve ** 2) * (A ** 2 + Vq ** 2) * Chi_2(s)) + cosTheta * (4 * Qe * Q * Ae * A * Chi_1(s) + 8 * Ae * Ve * A * Vq * Chi_2(s)))
     
     return M2
 
 
 def Integrator_sum(N: int, free_s=False):
-    """Monte-Carlo integrator for a 2->2 differential cross-section
+    """Monte-Carlo integrator for a 2->2 differential cross-section with fixed q
 
     Args:
         N (int): number of integration points
@@ -115,13 +115,13 @@ def Integrator_sum(N: int, free_s=False):
         for n in range(N_per_q):
             # is s fixed?
             if free_s:
-                s = np.random.uniform(low=smin, high=smax)
+                beam_energy = np.random.uniform(low=smin, high=smax)
             
             cosT = np.random.uniform(low=cosTmin, high=cosTmax)
             phi = np.random.uniform(low=phimin, high=phimax)
             
             # calculating cross-section for MC point
-            m = f_conv * 1.0 / (8.0 * np.pi * 4.0 * np.pi * 2 * s) * M_qqbar(s, cosT, phi, q)
+            m = f_conv * 1.0 / (8.0 * np.pi * 4.0 * np.pi * 2 * s) * M_qqbar(beam_energy, cosT, phi, q)
 
             M.append(m)
     
@@ -130,16 +130,74 @@ def Integrator_sum(N: int, free_s=False):
     dev = 0
     if free_s:
         # have to divide
-        m_mean = (smax - smin) * (cosTmax - cosTmin) * (phimax - phimin) * 1.0 / (N) * np.sum(M)
-        dev = (smax - smin) * (cosTmax - cosTmin) * (phimax - phimin) * np.sqrt((1.0 / N * np.sum(M ** 2) - m_mean ** 2) / N)
+        m_mean = 1.0 / (N) * np.sum(M)
+        dev = np.sqrt((1.0 / N * np.sum(M ** 2) - m_mean ** 2) / N)
+        m_mean *= (smax - smin)
+        dev *= (smax - smin)
     else:
-        m_mean = (cosTmax - cosTmin) * (phimax - phimin) * 1.0 / (N) * np.sum(M)
-        dev = (smax - smin) * (cosTmax - cosTmin) * (phimax - phimin) * np.sqrt((1.0 / N * np.sum(M ** 2) - m_mean ** 2) / N)
+        m_mean =  1.0 / (N) * np.sum(M)
+        dev = np.sqrt((1.0 / N * np.sum(M ** 2) - m_mean ** 2) / N)
 
+    m_mean *= (cosTmax - cosTmin) * (phimax - phimin) 
+    dev *= (cosTmax - cosTmin) * (phimax - phimin) 
 
     return m_mean, dev
 
-def Integrator_pick(N: int, fix_s: bool):
-    # integrator that picks quark flavour randomly
+def Integrator_pick(N: int, free_s: bool):
+    """Monte-Carlo integrator for a 2->2 differential cross-section with random quark flavour
 
-    return 0
+    Args:
+        N (int): number of integration points
+        free_s (bool, optional): True if s to be drawn from distribution. Defaults to False.
+
+    Returns:
+        list: mean and variance of integration
+    """
+    # integrator with random flavour
+
+    # constants
+    beam_energy = s
+    
+    M = []
+
+    # sample for each quark flavour
+    for n in range(N):
+        q = np.random.randint(low=1, high=6)
+        # is s fixed?
+        if free_s:
+            beam_energy = np.random.uniform(low=smin, high=smax)
+        
+        cosT = np.random.uniform(low=cosTmin, high=cosTmax)
+        phi = np.random.uniform(low=phimin, high=phimax)
+        
+        # calculating cross-section for MC point
+        m = f_conv * 1.0 / (8.0 * np.pi * 4.0 * np.pi * 2 * s) * M_qqbar(beam_energy, cosT, phi, q)
+
+        M.append(m)
+    
+    M = np.array(M)
+    m_mean = 0
+    dev = 0
+    if free_s:
+        # have to divide
+        m_mean = 1.0 / (N) * np.sum(M)
+        dev = np.sqrt((1.0 / N * np.sum(M ** 2) - m_mean ** 2) / N)
+        m_mean *= (smax - smin)
+        dev *= (smax - smin)
+    else:
+        m_mean =  1.0 / (N) * np.sum(M)
+        dev = np.sqrt((1.0 / N * np.sum(M ** 2) - m_mean ** 2) / N)
+
+    m_mean *= (cosTmax - cosTmin) * (phimax - phimin) 
+    dev *= (cosTmax - cosTmin) * (phimax - phimin) 
+
+    return m_mean, dev
+
+
+
+
+
+print("RNG Test: ", np.random.rand(5), "\n \t   [0.5488135  0.71518937 0.60276338 0.54488318 0.4236548 ]")
+
+
+print(Integrator_pick(1000, False), Integrator_sum(1000, False))
