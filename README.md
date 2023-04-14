@@ -13,3 +13,4 @@ The code found in this Repo is written in Python. To run it use Python 3.8.10 or
 * Matplotlib
 * Numba
 * SciPy
+* vegas

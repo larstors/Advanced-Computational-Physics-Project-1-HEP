@@ -2,7 +2,6 @@ import numpy as np
 import matplotlib.pyplot as plt
 from numba import njit, jit
 import scipy as sci
-import scipy.optimize as opt
 import vegas
 
 # ################### CONSTANTS #################
@@ -33,6 +32,11 @@ cosTmax = 1
 cosTmin = -1
 smin = (M_Z - 3 * Gamma_Z) ** 2
 smax = (M_Z + 3 * Gamma_Z) ** 2
+
+# sampling domain for importance sampling
+rhomin = np.arctan((smin - M_Z ** 2) / (M_Z * Gamma_Z))
+rhomax = np.arctan((smax - M_Z ** 2) / (M_Z * Gamma_Z))
+
 #  ############################## setting seed for RNG ######################################
 np.random.seed(0)
 
@@ -59,17 +63,6 @@ def Chi_2(s: float):
         float: resonance of Z amplitude
     """
     return kappa ** 2 * s ** 2 / ((s - M_Z ** 2) ** 2 + Gamma_Z ** 2 * M_Z ** 2)
-
-def BreitWigner_fit(s: float, a):
-    """Breit-Wigner function
-
-    Args:
-        s (float): beam energy
-
-    Returns:
-        float: Breit-Wigner function given beam energy s
-    """
-    return a * 1.0 / ((s - M_Z ** 2) ** 2 + M_Z ** 2 * Gamma_Z ** 2)
 
 
 def M_qqbar(s: float, cosTheta: float, phi: float, q: int):
@@ -103,6 +96,17 @@ def M_qqbar(s: float, cosTheta: float, phi: float, q: int):
 
     return M2
 
+def BreitWigner(s: float):
+    """Breit-Wigner function
+
+    Args:
+        s (float): beam energy
+
+    Returns:
+        float: Breit-Wigner function given beam energy s
+    """
+    return 1.0 / ((s - M_Z ** 2) ** 2 + M_Z ** 2 * Gamma_Z ** 2)
+
 
 def Integrator_sum(N: int, free_s=False):
     """Monte-Carlo integrator for a 2->2 differential cross-section with fixed q
@@ -125,7 +129,7 @@ def Integrator_sum(N: int, free_s=False):
     for n in range(N):
         # is s fixed?
         if free_s:
-            beam_energy = np.random.uniform(low=smin, high=smax)
+            beam_energy = np.random.uniform(low=rhomin, high=rhomax)
 
         cosT = np.random.uniform(low=cosTmin, high=cosTmax)
         phi = np.random.uniform(low=phimin, high=phimax)
@@ -160,73 +164,58 @@ def Integrator_sum(N: int, free_s=False):
     return m_mean, dev
 
 
-def Integrator_pick(N: int, free_s=False, s0=s, vegas_integration=False):
+def Integrator_pick(N: int, free_s=False):
     """Monte-Carlo integrator for a 2->2 differential cross-section with random quark flavour
 
     Args:
         N (int): number of integration points
         free_s (bool, optional): True if s to be drawn from distribution. Defaults to False.
-        s0 (float, optional): beam energy zeroing. Defaults to s.
-        vegas_integration (bool, optional): True if using the vegas integration modul. Defaults to False.
 
     Returns:
         list: mean and variance of integration
     """
-    # own integrator
-    # TODO improve efficiency, need to verctorize it....
-    if not vegas_integration:
-        # constants
-        beam_energy = s0
+    # integrator with random flavour
 
-        # list for data points
-        M = []
+    # constants
+    beam_energy = s
 
-        # list for beam_energies
-        S = []
+    M = []
 
-        # for hist
-        hist = []
-        bins = []
-
-        # sample for each quark flavour
-        for n in range(N):
-            q = np.random.randint(low=1, high=6)
-            # is s fixed?
-            if free_s:
-                beam_energy = np.random.uniform(low=smin, high=smax)
-                S.append(beam_energy)
-
-            cosT = np.random.uniform(low=cosTmin, high=cosTmax)
-            phi = np.random.uniform(low=phimin, high=phimax)
-
-            # calculating cross-section for MC point
-            m = N_q * f_conv * 1.0 / (8.0 * np.pi * 4.0 * np.pi * 2 * s) * \
-                M_qqbar(beam_energy, cosT, phi, q)
-            if free_s:
-                m /= (smax - smin)
-
-            M.append(m)
-
-        M = np.array(M)
-        m_mean = 0
-        dev = 0
+    # sample for each quark flavour
+    for n in range(N):
+        q = np.random.randint(low=1, high=6)
+        # is s fixed?
         if free_s:
-            # have to divide
-            m_mean = 1.0 / (N) * np.sum(M)
-            dev = np.sqrt((1.0 / N * np.sum(M ** 2) - m_mean ** 2) / N)
-            m_mean *= (smax - smin)
-            dev *= (smax - smin)
-        else:
-            m_mean = 1.0 / (N) * np.sum(M)
-            dev = np.sqrt((1.0 / N * np.sum(M ** 2) - m_mean ** 2) / N)
+            beam_energy = np.random.uniform(low=rhomin, high=rhomax)
+            beam_energy = M_Z * Gamma_Z * np.tan(beam_energy) + M_Z ** 2
+            #print(beam_energy, smin, smax)
 
-        m_mean *= (cosTmax - cosTmin) * (phimax - phimin)
-        dev *= (cosTmax - cosTmin) * (phimax - phimin)
+        cosT = np.random.uniform(low=cosTmin, high=cosTmax)
+        phi = np.random.uniform(low=phimin, high=phimax)
 
-        if free_s:
-            hist, bins = np.histogram(S, weights=M, bins=1000)
+        # calculating cross-section for MC point
+        m = N_q * f_conv * 1.0 / (8.0 * np.pi * 4.0 * np.pi * 2.0 * s) * \
+            M_qqbar(beam_energy, cosT, phi, q) / BreitWigner(beam_energy) * (rhomax - rhomin) / (M_Z * Gamma_Z) / (smax - smin)
 
-        return m_mean, dev, hist, bins
+        M.append(m)
+
+    M = np.array(M)
+    m_mean = 0
+    dev = 0
+    if free_s:
+        # have to divide
+        m_mean = 1.0 / (N) * np.sum(M)
+        dev = np.sqrt((1.0 / N * np.sum(M ** 2) - m_mean ** 2) / N)
+        m_mean *= (smax - smin)
+        dev *= (smax - smin)
+    else:
+        m_mean = 1.0 / (N) * np.sum(M)
+        dev = np.sqrt((1.0 / N * np.sum(M ** 2) - m_mean ** 2) / N)
+
+    m_mean *= (cosTmax - cosTmin) * (phimax - phimin)
+    dev *= (cosTmax - cosTmin) * (phimax - phimin)
+
+    return m_mean, dev
 
 
 print("RNG Test:       ", np.random.rand(5),
@@ -251,81 +240,11 @@ plt.xlabel(r"$N$")
 plt.ylabel(r"$\mathrm{var}(\sigma)$")
 plt.grid()
 plt.legend()
-
-plt.savefig("ex1_1_1.pdf", dpi=500, bbox_inches="tight")
-
-
-N = 1000
-I = Integrator_pick(N)
-
-print("Using N=%d we get a result of sigma=%.2f +- %.2f" % (N, I[0], I[1]))
-
-
-
-
-
-# ############################## c #######################################
-
-
-
-fig, ax = plt.subplots(nrows=1, ncols=2, figsize=(10, 5))
-plt.subplots_adjust(wspace=0.3)
-N = np.array([10, 100, 1000, 10000])
-
-I = []
-
-for n in N:
-    I.append(Integrator_pick(n)[1])
-
-ax[0].plot(N, I, "r-x", label="MC integrator")
-ax[0].plot(N, 13000*np.sqrt(1/N), "k--", label=r"$\sim N^{-1/2}$")
-ax[0].set_yscale("log")
-ax[0].set_xscale("log")
-ax[0].set_xlabel(r"$N$")
-ax[0].set_ylabel(r"$\mathrm{var}(\sigma)$")
-ax[0].grid()
-ax[0].legend()
-
-# fix N
-N = 10000
-
-# scanning the s range
-s0 = np.linspace(smin, smax, 20, endpoint=True)
-
-comparison_val = []
-comparison_var = []
-
-for i in s0:
-    I = Integrator_pick(N, False, i)
-    comparison_val.append(I[0])
-    comparison_var.append(I[1])
-
-
-
-
-
-I = Integrator_pick(N, True)
-
-
-w = I[3][-1] - I[3][-2]
-
-b = (I[3][1:] + I[3][:-1]) / 2
-
-
-ax[1].bar(I[3][:-1],I[2]*(smax - smin), width=w, label="Resc. weight. hist.", color="magenta")
-ax[1].errorbar(s0, comparison_val, yerr=comparison_var, fmt="-x", label=r"$\delta$-MC probing")
-ax[1].set_xlabel(r"$s$")
-ax[1].grid()
-ax[1].legend()
-#ax[1].axis([smin, smax, 1e-6, 0.002])
-ax[1].set_xticks([smin, 7700, s, 9000, smax])
-ax[1].set_xticklabels([r"$s_\mathrm{min}$", r"$7700$", r"$s=M_Z^2$",r"$9000$", r"$s_\mathrm{max}$"])
-plt.savefig("ex1_1_2.pdf", dpi=500,bbox_inches="tight")
 plt.show()
+#plt.savefig("ex1_1_1.pdf", dpi=500, bbox_inches="tight")
 
 
 N = 10000
 I = Integrator_pick(N, True)
 
 print("Using N=%d we get a result of sigma=%.2f +- %.2f" % (N, I[0], I[1]))
-print(smax - smin)
